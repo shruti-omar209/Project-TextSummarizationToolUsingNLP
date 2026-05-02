@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Text Summarizer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='logo.jpg') }}">
+    <script>
+        function showLoader() {
+            document.getElementById("loader").style.display = "block";
+        }
+
+        function countWords() {
+            let text = document.getElementById("text").value;
+            if(text.trim() === ""){
+                document.getElementById("wordCount").innerText = "Words: 0";
+                return;
+            }
+            let words = text.trim().split(/\s+/).length;
+            document.getElementById("wordCount").innerText = "Words: " + words;
+        }
+
+        function copyText() {
+            let text = document.getElementById("summaryText").innerText;
+            navigator.clipboard.writeText(text);
+            alert("Summary copied!");
+        }
+
+        function clearPage() {
+            document.getElementById("text").value = "";
+            document.getElementById("summaryText")?.remove();
+            document.getElementById("wordCount").innerText = "Words: 0";
+            document.getElementById("loader").style.display = "none";
+            window.location.href = "/";
+        }
+        function countSummaryWords() {
+            let summary = document.getElementById("summaryText");
+            if(summary){
+                let words = summary.innerText.trim().split(/\s+/).length;
+                document.getElementById("summaryWordCount").innerText =
+                    "Summary Words: " + words;
+            }
+        }
+        function saveSummary() {
+
+            let text = window.generatedText || document.getElementById("text").value;
+            let summary = window.generatedSummary || document.getElementById("summaryText").innerText;
+            let summary_type = document.querySelector('select[name="summary_type"]').value;
+
+            fetch("/save_summary", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    text: text,
+                    summary: summary,
+                    summary_type: summary_type
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert("Summary saved successfully!");
+            })
+            .catch(error => {
+                alert("Error saving summary");
+            });
+        }
+
+    </script>
+</head>
+<body>
+
+<div class="container">
+    <h1>AI Text Summarization Tool</h1>
+    <div class="top-bar">
+        {% if current_user.is_authenticated %}
+            Welcome, {{ current_user.username }} |
+            <a href="/history">History</a> |
+            <a href="/logout">Logout</a>
+        {% else %}
+            <a href="/login">Login</a> |
+            <a href="/register">Register</a>
+        {% endif %}
+    </div>
+
+    <form id="summaryForm" action="/generate" method="POST" enctype="multipart/form-data">
+        <textarea id="text" name="text" rows="8"
+        placeholder="Enter your text here..."
+        onkeyup="countWords()">{{ text }}</textarea>
+
+        <div id="wordCount">Words: 0</div>
+
+        <br><br>
+
+
+        <label><b>Upload PDF (Optional):</b></label>
+        <input type="file" name="pdf_file" accept=".pdf">
+        
+        <br><br>
+
+        <label><b>Summary Type:</b></label>
+        <select name="summary_type">
+            <option value="concise"
+                {% if summary_type == "concise" %}selected{% endif %}>
+                Concise
+            </option>
+            <option value="detailed"
+                {% if summary_type == "detailed" %}selected{% endif %}>
+                Detailed
+            </option>
+        </select>
+
+        <br><br>
+
+        <button type="submit">Generate Summary</button>
+        <button type="button" onclick="clearPage()">Clear</button>
+    </form>
+
+    <div id="loader" class="loader">⏳ Generating summary... Please wait</div>
+
+    {% if summary %}
+        <div class="result">
+            <h2>Summary</h2>
+            <p id="summaryText">{{ summary }}</p>
+            <p id="summaryWordCount">
+                Summary Words:
+            </p>
+
+            <br><br>
+            <button onclick="copyText()">Copy Summary</button>
+            <button onclick="saveSummary()">Save Summary</button>
+        </div>
+    {% endif %}
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+
+    document.getElementById("summaryForm").addEventListener("submit", function(e) {
+
+        e.preventDefault();  // STOP default form submission
+
+        showLoader();
+
+        let formData = new FormData(this);
+
+        fetch("/generate", {
+            method: "POST",
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Server error");
+            }
+            return response.json();
+        })
+        .then(data => {
+
+            document.getElementById("loader").style.display = "none";
+
+            let oldResult = document.querySelector(".result");
+            if (oldResult) oldResult.remove();
+
+            // ✅ store globally (VERY IMPORTANT)
+            window.generatedText = data.original_text;
+            window.generatedSummary = data.summary;
+
+            // ✅ fill textarea (fix PDF issue)
+            document.getElementById("text").value = data.original_text;
+            countWords();
+            let resultDiv = document.createElement("div");
+            resultDiv.className = "result";
+            resultDiv.innerHTML = `
+                <h2>Summary</h2>
+                <p id="summaryText">${data.summary}</p>
+                <p>Summary Words: ${data.word_count}</p>
+                <button onclick="copyText()">Copy Summary</button>
+                <button onclick="saveSummary()">Save Summary</button>
+            `;
+
+            document.querySelector(".container").appendChild(resultDiv);
+
+            document.querySelector(".container").appendChild(resultDiv);
+        })
+        .catch(error => {
+            document.getElementById("loader").style.display = "none";
+            alert("Error generating summary");
+            console.error(error);
+        });
+
+    });
+
+});
+</script>
+</body>
+</html>

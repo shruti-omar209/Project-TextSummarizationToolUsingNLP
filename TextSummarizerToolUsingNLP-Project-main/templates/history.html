@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+    <title>Summary History</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='logo.jpg') }}">
+</head>
+
+<body>
+<div class="container">
+
+<div class="top-bar">
+    <a href="/">Home</a> | <a href="/logout">Logout</a>
+</div>
+
+
+<!-- HEADER -->
+<div class="header-row">
+    <h1>Your Summary History</h1>
+    <form action="/delete_all" method="POST">
+        <button class="delete-all-btn" type="submit"
+            onclick="return confirm('Delete all summaries?')">
+            Delete All
+
+        </button>
+    </form>
+</div>
+
+<hr>
+
+{% if results %}
+
+{% for summary, time in results %}
+
+<div class="history-card">
+
+    <!-- LEFT: DETAILS -->
+    <div class="card-content">
+
+        <p><b>Summary No:</b> {{ results|length - loop.index + 1 }} </p>
+        <p><b>Summary Type:</b> {{ summary.summary_type }}</p>
+        <p><b>Created At:</b> {{ (time + timedelta(hours=5, minutes=30)).strftime('%d %b %Y, %I:%M %p') }}</p>
+
+        <p class="section-title">Original Text:</p>
+        <div class="text-box">
+            {{ summary.input.input_text }}
+        </div>
+
+        <p class="section-title">Generated Summary:</p>
+        <div class="text-box summary-box">
+            {{ summary.summary_text }}
+        </div>
+
+    </div>
+
+    <!-- RIGHT: DELETE BUTTON -->
+    <div class="card-actions">
+        <form action="/delete_summary/{{ summary.summary_id }}" method="POST">
+            <button class="delete-btn" type="submit"
+                onclick="return confirm('Delete this summary?')">
+                <i class="fa fa-trash"></i>
+            </button>
+        </form>
+    </div>
+
+</div>
+
+{% endfor %}
+
+{% else %}
+
+<p>No summaries saved yet.</p>
+
+{% endif %}
+
+</div>
+
+</body>
+</html>
