@@ -1,12 +1,60 @@
-<!DOCTYPE html>
+{% extends "base.html" %}
+{% block title %}History — AI Summarizer{% endblock %}
+{% block page_title %}Summary History{% endblock %}
 
-<html>
-<head>
-    <title>Summary History</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='logo.jpg') }}">
-</head>
+{% block content %}
+<div class="card">
+    <div class="header-row">
+        <span style="font-size:14px;color:var(--text-muted);">
+            {{ results|length }} saved summary{% if results|length != 1 %}s{% endif %}
+        </span>
+        {% if results %}
+        <form action="{{ url_for('delete_all') }}" method="POST"
+              onsubmit="return confirm('Delete all summaries permanently?')">
+            <button type="submit" class="btn btn-danger btn-sm">
+                <i class="fa fa-trash"></i> Delete All
+            </button>
+        </form>
+        {% endif %}
+    </div>
+
+    {% if results %}
+        {% for summary, time in results %}
+        <div class="history-card">
+            <div class="card-content">
+                <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+                    <span class="badge badge-user">{{ summary.summary_type | capitalize }}</span>
+                    &nbsp; <i class="fa fa-clock"></i>
+                    {{ (time + timedelta(hours=5, minutes=30)).strftime('%d %b %Y, %I:%M %p') }}
+                </p>
+
+                <div class="section-title">Original Text</div>
+                <div class="text-box">{{ summary.input.input_text }}</div>
+
+                <div class="section-title">Generated Summary</div>
+                <div class="text-box summary-box">{{ summary.summary_text }}</div>
+            </div>
+
+            <div class="card-actions">
+                <form action="{{ url_for('delete_summary', summary_id=summary.summary_id) }}"
+                      method="POST" onsubmit="return confirm('Delete this summary?')">
+                    <button type="submit" class="btn btn-danger btn-sm">
+                        <i class="fa fa-trash"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <p style="color:var(--text-muted);text-align:center;padding:40px 0;">
+            <i class="fa fa-inbox" style="font-size:32px;display:block;margin-bottom:10px;"></i>
+            No summaries saved yet.
+            <a href="{{ url_for('index') }}" style="color:var(--accent);">Generate one now</a>.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}
+
 
 <body>
 <div class="container">

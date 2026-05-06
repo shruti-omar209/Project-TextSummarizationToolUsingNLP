@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Audit Logs — Admin{% endblock %}
+{% block page_title %}Audit Logs{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>User</th>
+                    <th>Role</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td style="color:var(--text-muted);">{{ log.activity_id }}</td>
+                    <td>{{ log.user.username }}</td>
+                    <td><span class="badge badge-{{ log.role or 'user' }}">{{ log.role or 'user' }}</span></td>
+                    <td>{{ log.activity_type }}</td>
+                    <td style="font-size:13px;color:var(--text-muted);">{{ log.details or '—' }}</td>
+                    <td style="font-size:12px;color:var(--text-muted);">
+                        {{ log.activity_time.strftime('%d %b %Y, %H:%M:%S') }}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" style="text-align:center;color:var(--text-muted);">No logs yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

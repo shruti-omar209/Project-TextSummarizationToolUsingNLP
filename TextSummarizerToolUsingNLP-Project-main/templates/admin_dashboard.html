@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Admin{% endblock %}
+{% block page_title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ total_users }}</div>
+        <div class="stat-label"><i class="fa fa-users"></i> Total Users</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ total_summaries }}</div>
+        <div class="stat-label"><i class="fa fa-file-lines"></i> Total Summaries</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title"><i class="fa fa-list-check"></i> Recent Activity</div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Role</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in recent_logs %}
+                <tr>
+                    <td>{{ log.user.username }}</td>
+                    <td><span class="badge badge-{{ log.role or 'user' }}">{{ log.role or 'user' }}</span></td>
+                    <td>{{ log.activity_type }}</td>
+                    <td style="color:var(--text-muted);font-size:13px;">{{ log.details or '—' }}</td>
+                    <td style="font-size:12px;color:var(--text-muted);">
+                        {{ log.activity_time.strftime('%d %b %Y, %H:%M') }}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">No activity yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

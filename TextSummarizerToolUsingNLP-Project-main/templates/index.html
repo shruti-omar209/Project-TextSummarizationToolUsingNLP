@@ -1,195 +1,364 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>AI Text Summarizer</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='logo.jpg') }}">
-    <script>
-        function showLoader() {
-            document.getElementById("loader").style.display = "block";
-        }
+{% extends "base.html" %}
+{% block title %}Generate Summary — AI Summarizer{% endblock %}
+{% block head %}
+<style>
+/* ===== FULL HEIGHT NO-SCROLL LAYOUT ===== */
+body, html { overflow: hidden; height: 100%; }
+.main-content { display: flex; flex-direction: column; height: 100vh; overflow: hidden; padding: 16px 20px; }
+.page-header { flex-shrink: 0; margin-bottom: 10px; }
+.page-header h2 { font-size: 20px; margin-bottom: 2px; }
 
-        function countWords() {
-            let text = document.getElementById("text").value;
-            if(text.trim() === ""){
-                document.getElementById("wordCount").innerText = "Words: 0";
-                return;
-            }
-            let words = text.trim().split(/\s+/).length;
-            document.getElementById("wordCount").innerText = "Words: " + words;
-        }
+/* Split layout */
+.summarizer-layout {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+.pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+.pane-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.pane textarea, .pane .output-box {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  overflow-y: auto;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.7;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+.pane .output-box {
+  background: var(--card-bg);
+  border-left: 3px solid var(--accent);
+  white-space: pre-wrap;
+}
+.pane-footer {
+  flex-shrink: 0;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.word-badge {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+/* Controls bar */
+.controls-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 0 6px;
+}
+/* Tab buttons */
+.tab-btn {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s;
+}
+.tab-btn.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: white;
+  border-color: transparent;
+}
+.tab-btn:not(.active):hover { border-color: var(--accent); color: var(--accent); }
+/* Remove button — no fill */
+.btn-remove {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+.btn-remove:hover { border-color: var(--danger); color: var(--danger); }
+/* File preview */
+.file-preview-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--input-bg);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.file-preview-box i { color: var(--accent); }
+/* Loader inline */
+#loader { padding: 0; font-size: 13px; }
+/* Error box */
+#error-box { flex-shrink: 0; margin-top: 6px; padding: 8px 12px; font-size: 13px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2><i class="fas fa-magic"></i> Generate Summary</h2>
+</div>
 
-        function copyText() {
-            let text = document.getElementById("summaryText").innerText;
-            navigator.clipboard.writeText(text);
-            alert("Summary copied!");
-        }
+<!-- Controls bar: tabs, type, generate, loader -->
+<form id="summaryForm" enctype="multipart/form-data">
+<div class="controls-bar">
+  <div class="tab-group" style="margin-bottom:0">
+    <button type="button" class="tab-btn active" onclick="switchTab('text')">
+      <i class="fas fa-keyboard"></i> Paste Text
+    </button>
+    <button type="button" class="tab-btn" onclick="switchTab('file')">
+      <i class="fas fa-upload"></i> Upload File
+    </button>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;font-size:13px;color:var(--text)">
+    <label style="display:flex;align-items:center;gap:4px;"><input type="radio" name="summary_type" value="Concise" checked> Concise</label>
+    <label style="display:flex;align-items:center;gap:4px;"><input type="radio" name="summary_type" value="Detailed"> Detailed</label>
+  </div>
+  <button type="submit" class="btn btn-primary" id="generateBtn" style="padding:7px 16px;font-size:13px">
+    <i class="fas fa-bolt"></i> Generate
+  </button>
+  <div class="loader" id="loader" style="display:none;padding:0">
+    <div class="spinner"></div> Generating…
+  </div>
+</div>
+<input type="hidden" name="input_mode" id="input_mode" value="text">
+</form>
 
-        function clearPage() {
-            document.getElementById("text").value = "";
-            document.getElementById("summaryText")?.remove();
-            document.getElementById("wordCount").innerText = "Words: 0";
-            document.getElementById("loader").style.display = "none";
-            window.location.href = "/";
-        }
-        function countSummaryWords() {
-            let summary = document.getElementById("summaryText");
-            if(summary){
-                let words = summary.innerText.trim().split(/\s+/).length;
-                document.getElementById("summaryWordCount").innerText =
-                    "Summary Words: " + words;
-            }
-        }
-        function saveSummary() {
+<div id="error-box" class="alert alert-error" style="display:none"></div>
 
-            let text = window.generatedText || document.getElementById("text").value;
-            let summary = window.generatedSummary || document.getElementById("summaryText").innerText;
-            let summary_type = document.querySelector('select[name="summary_type"]').value;
+<!-- LEFT / RIGHT PANES -->
+<div class="summarizer-layout">
 
-            fetch("/save_summary", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    text: text,
-                    summary: summary,
-                    summary_type: summary_type
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert("Summary saved successfully!");
-            })
-            .catch(error => {
-                alert("Error saving summary");
-            });
-        }
-
-    </script>
-</head>
-<body>
-
-<div class="container">
-    <h1>AI Text Summarization Tool</h1>
-    <div class="top-bar">
-        {% if current_user.is_authenticated %}
-            Welcome, {{ current_user.username }} |
-            <a href="/history">History</a> |
-            <a href="/logout">Logout</a>
-        {% else %}
-            <a href="/login">Login</a> |
-            <a href="/register">Register</a>
-        {% endif %}
+  <!-- LEFT: Input -->
+  <div class="pane">
+    <div class="pane-header">
+      <span class="pane-title">Input</span>
+      <span class="word-badge" id="input-word-count">0 words</span>
     </div>
 
-    <form id="summaryForm" action="/generate" method="POST" enctype="multipart/form-data">
-        <textarea id="text" name="text" rows="8"
-        placeholder="Enter your text here..."
-        onkeyup="countWords()">{{ text }}</textarea>
+    <!-- Text tab -->
+    <div id="tab-text" style="display:flex;flex-direction:column;flex:1;min-height:0">
+      <textarea id="input_text" name="input_text"
+                placeholder="Paste your article, essay, or any text here…"
+                oninput="updateInputWordCount()"></textarea>
+    </div>
 
-        <div id="wordCount">Words: 0</div>
+    <!-- File tab -->
+    <div id="tab-file" style="display:none;flex-direction:column;flex:1;min-height:0">
+      <div id="file-drop-area">
+        <input type="file" id="file" name="file" accept=".pdf,.txt" onchange="onFileSelected()">
+        <small class="text-muted">Accepted: .pdf, .txt (max 5 MB)</small>
+      </div>
+      <div id="file-preview" style="display:none" class="file-preview-box">
+        <i class="fas fa-file-alt"></i>
+        <span id="file-name-display"></span>
+        <button type="button" class="btn-remove" onclick="removeFile()">
+          <i class="fas fa-times"></i> Remove
+        </button>
+      </div>
+    </div>
+  </div>
 
-        <br><br>
+  <!-- RIGHT: Output -->
+  <div class="pane">
+    <div class="pane-header">
+      <span class="pane-title">Generated Summary</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="word-badge" id="summary-word-count" style="margin-left:0"></span>
+        <button type="button" class="btn-remove" id="clearBtn" onclick="clearAll()" style="display:none">
+          <i class="fas fa-broom"></i> Clear
+        </button>
+      </div>
+    </div>
+    <div class="output-box" id="summary-output"></div>
+    <div class="pane-footer" id="result-actions" style="display:none">
+      <button type="button" class="btn btn-outline btn-sm" onclick="copySummary()">
+        <i class="fas fa-copy"></i> Copy
+      </button>
+      <button type="button" class="btn btn-primary btn-sm" id="saveSummaryBtn" onclick="saveSummary()">
+        <i class="fas fa-save"></i> Save
+      </button>
+      <span id="save-msg" style="display:none;font-size:12px;color:var(--success)">
+        <i class="fas fa-check-circle"></i> Saved to history
+      </span>
+    </div>
+  </div>
 
-
-        <label><b>Upload PDF (Optional):</b></label>
-        <input type="file" name="pdf_file" accept=".pdf">
-        
-        <br><br>
-
-        <label><b>Summary Type:</b></label>
-        <select name="summary_type">
-            <option value="concise"
-                {% if summary_type == "concise" %}selected{% endif %}>
-                Concise
-            </option>
-            <option value="detailed"
-                {% if summary_type == "detailed" %}selected{% endif %}>
-                Detailed
-            </option>
-        </select>
-
-        <br><br>
-
-        <button type="submit">Generate Summary</button>
-        <button type="button" onclick="clearPage()">Clear</button>
-    </form>
-
-    <div id="loader" class="loader">⏳ Generating summary... Please wait</div>
-
-    {% if summary %}
-        <div class="result">
-            <h2>Summary</h2>
-            <p id="summaryText">{{ summary }}</p>
-            <p id="summaryWordCount">
-                Summary Words:
-            </p>
-
-            <br><br>
-            <button onclick="copyText()">Copy Summary</button>
-            <button onclick="saveSummary()">Save Summary</button>
-        </div>
-    {% endif %}
 </div>
+
+<!-- Hidden save form -->
+<form id="saveForm" method="POST" action="/save_summary" style="display:none">
+  <input type="hidden" name="summary_text" id="save-summary">
+  <input type="hidden" name="input_text" id="save-input">
+  <input type="hidden" name="summary_type" id="save-type">
+  <input type="hidden" name="input_type" id="save-input-type">
+  <input type="hidden" name="file_name" id="save-filename" value="">
+</form>
+
 <script>
-document.addEventListener("DOMContentLoaded", function() {
+var currentMode = 'text';
 
-    document.getElementById("summaryForm").addEventListener("submit", function(e) {
+function switchTab(mode) {
+  currentMode = mode;
+  document.getElementById('tab-text').style.display = mode === 'text' ? 'flex' : 'none';
+  document.getElementById('tab-file').style.display = mode === 'file' ? 'flex' : 'none';
+  document.getElementById('input_mode').value = mode;
+  document.querySelectorAll('.tab-btn').forEach(function(b, i) {
+    b.classList.toggle('active', (mode === 'text' && i === 0) || (mode === 'file' && i === 1));
+  });
+}
 
-        e.preventDefault();  // STOP default form submission
+function updateInputWordCount() {
+  var txt = document.getElementById('input_text').value.trim();
+  var count = txt ? txt.split(/\s+/).filter(Boolean).length : 0;
+  document.getElementById('input-word-count').textContent = count + ' words';
+}
 
-        showLoader();
+function onFileSelected() {
+  var fileInput = document.getElementById('file');
+  if (fileInput.files && fileInput.files.length > 0) {
+    document.getElementById('file-name-display').textContent = fileInput.files[0].name;
+    document.getElementById('file-preview').style.display = 'flex';
+    document.getElementById('file-drop-area').style.display = 'none';
+  }
+}
 
-        let formData = new FormData(this);
+function removeFile() {
+  document.getElementById('file').value = '';
+  document.getElementById('file-preview').style.display = 'none';
+  document.getElementById('file-drop-area').style.display = '';
+}
 
-        fetch("/generate", {
-            method: "POST",
-            body: formData
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error("Server error");
-            }
-            return response.json();
-        })
-        .then(data => {
+function clearAll() {
+  document.getElementById('input_text').value = '';
+  document.getElementById('input-word-count').textContent = '0 words';
+  document.getElementById('summary-output').textContent = '';
+  document.getElementById('summary-word-count').textContent = '';
+  document.getElementById('result-actions').style.display = 'none';
+  document.getElementById('clearBtn').style.display = 'none';
+  document.getElementById('error-box').style.display = 'none';
+  removeFile();
+}
 
-            document.getElementById("loader").style.display = "none";
+function copySummary() {
+  var text = document.getElementById('summary-output').textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = document.querySelector('[onclick="copySummary()"]');
+    btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+    setTimeout(function() { btn.innerHTML = '<i class="fas fa-copy"></i> Copy'; }, 2000);
+  });
+}
 
-            let oldResult = document.querySelector(".result");
-            if (oldResult) oldResult.remove();
+function saveSummary() {
+  var btn = document.getElementById('saveSummaryBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  var formData = new FormData(document.getElementById('saveForm'));
+  fetch('/save_summary', { method: 'POST', body: formData })
+  .then(function(res) {
+    if (res.ok || res.redirected) {
+      btn.style.display = 'none';
+      document.getElementById('save-msg').style.display = 'inline';
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-save"></i> Save';
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save"></i> Save';
+  });
+}
 
-            // ✅ store globally (VERY IMPORTANT)
-            window.generatedText = data.original_text;
-            window.generatedSummary = data.summary;
+document.getElementById('summaryForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var formData = new FormData();
+  var mode = currentMode;
+  formData.append('input_mode', mode);
+  formData.append('summary_type', document.querySelector('[name="summary_type"]:checked').value);
+  if (mode === 'text') {
+    formData.append('input_text', document.getElementById('input_text').value);
+  } else {
+    var fi = document.getElementById('file');
+    if (fi.files.length > 0) formData.append('file', fi.files[0]);
+  }
 
-            // ✅ fill textarea (fix PDF issue)
-            document.getElementById("text").value = data.original_text;
-            countWords();
-            let resultDiv = document.createElement("div");
-            resultDiv.className = "result";
-            resultDiv.innerHTML = `
-                <h2>Summary</h2>
-                <p id="summaryText">${data.summary}</p>
-                <p>Summary Words: ${data.word_count}</p>
-                <button onclick="copyText()">Copy Summary</button>
-                <button onclick="saveSummary()">Save Summary</button>
-            `;
+  document.getElementById('loader').style.display = 'flex';
+  document.getElementById('error-box').style.display = 'none';
+  document.getElementById('result-actions').style.display = 'none';
+  document.getElementById('save-msg').style.display = 'none';
+  document.getElementById('saveSummaryBtn').style.display = '';
+  document.getElementById('saveSummaryBtn').disabled = false;
+  document.getElementById('saveSummaryBtn').innerHTML = '<i class="fas fa-save"></i> Save';
+  document.getElementById('generateBtn').disabled = true;
+  document.getElementById('summary-output').textContent = '';
 
-            document.querySelector(".container").appendChild(resultDiv);
-
-            document.querySelector(".container").appendChild(resultDiv);
-        })
-        .catch(error => {
-            document.getElementById("loader").style.display = "none";
-            alert("Error generating summary");
-            console.error(error);
-        });
-
-    });
-
+  fetch('/generate', { method: 'POST', body: formData })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('generateBtn').disabled = false;
+    if (data.error) {
+      document.getElementById('error-box').textContent = data.error;
+      document.getElementById('error-box').style.display = 'flex';
+      return;
+    }
+    var origWords = data.original_text ? data.original_text.trim().split(/\s+/).filter(Boolean).length : 0;
+    document.getElementById('input-word-count').textContent = origWords + ' words';
+    document.getElementById('summary-word-count').textContent = (data.word_count || 0) + ' words';
+    document.getElementById('summary-output').textContent = data.summary;
+    document.getElementById('save-summary').value = data.summary;
+    document.getElementById('save-input').value = data.original_text || '';
+    document.getElementById('save-type').value = formData.get('summary_type') || 'Concise';
+    document.getElementById('save-input-type').value = data.input_type || 'Text';
+    document.getElementById('result-actions').style.display = 'flex';
+    document.getElementById('clearBtn').style.display = 'inline-flex';
+  })
+  .catch(function() {
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('generateBtn').disabled = false;
+    document.getElementById('error-box').textContent = 'An error occurred. Please try again.';
+    document.getElementById('error-box').style.display = 'flex';
+  });
 });
 </script>
-</body>
-</html>
+{% endblock %}

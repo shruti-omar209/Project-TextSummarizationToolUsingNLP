@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Manage Summaries — Admin{% endblock %}
+{% block page_title %}Manage Summaries{% endblock %}
+
+{% block content %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+{% endwith %}
+
+<div class="card">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>User</th>
+                    <th>Type</th>
+                    <th>Summary Preview</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for summary, username in summaries %}
+                <tr>
+                    <td style="color:var(--text-muted);">#{{ summary.summary_id }}</td>
+                    <td>{{ username }}</td>
+                    <td><span class="badge badge-user">{{ summary.summary_type }}</span></td>
+                    <td style="font-size:13px;color:var(--text-muted);max-width:300px;">
+                        {{ summary.summary_text[:120] }}{% if summary.summary_text|length > 120 %}…{% endif %}
+                    </td>
+                    <td>
+                        <form method="POST"
+                              action="{{ url_for('admin_delete_summary', summary_id=summary.summary_id) }}"
+                              onsubmit="return confirm('Delete this summary permanently?')">
+                            <button type="submit" class="btn btn-danger btn-sm">
+                                <i class="fa fa-trash"></i> Delete
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">No summaries found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
