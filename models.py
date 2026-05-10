@@ -4,10 +4,10 @@ from datetime import datetime
 from database import db
 
 # =========================
-# USER TABLE
+# AUTH TABLE (Users + Admins)
 # =========================
 class User(UserMixin, db.Model):
-    __tablename__ = "USER"
+    __tablename__ = "AUTH"
 
     user_id = db.Column(
         db.Integer,
@@ -31,13 +31,19 @@ class User(UserMixin, db.Model):
         nullable=False
     )
 
+    role = db.Column(
+        db.String(20),
+        nullable=False,
+        default="user"
+    )  # 'user' or 'admin'
+
     registration_date = db.Column(
         db.DateTime,
         default=datetime.utcnow
     )
 
     # Relationships
-    activities = db.relationship("UserActivity", backref="user", lazy=True)
+    activities = db.relationship("Activity", backref="user", lazy=True)
     inputs = db.relationship("InputContent", backref="user", lazy=True)
     summaries = db.relationship("Summary", backref="user", lazy=True)
 
@@ -46,10 +52,10 @@ class User(UserMixin, db.Model):
 
 
 # =========================
-# USER_ACTIVITY TABLE
+# ACTIVITY TABLE (Users + Admins)
 # =========================
-class UserActivity(db.Model):
-    __tablename__ = "USER_ACTIVITY"
+class Activity(db.Model):
+    __tablename__ = "ACTIVITY"
 
     activity_id = db.Column(
         db.Integer,
@@ -59,13 +65,23 @@ class UserActivity(db.Model):
 
     user_id = db.Column(
         db.Integer,
-        db.ForeignKey("USER.user_id"),
+        db.ForeignKey("AUTH.user_id"),
         nullable=False
     )
 
     activity_type = db.Column(
         db.String(50),
         nullable=False
+    )
+
+    role = db.Column(
+        db.String(20),
+        nullable=True
+    )  # 'user' or 'admin'
+
+    details = db.Column(
+        db.Text,
+        nullable=True
     )
 
     related_id = db.Column(
@@ -94,14 +110,14 @@ class InputContent(db.Model):
 
     user_id = db.Column(
         db.Integer,
-        db.ForeignKey("USER.user_id"),
+        db.ForeignKey("AUTH.user_id"),
         nullable=False
     )
 
     input_type = db.Column(
         db.String(20),
         nullable=False
-    )  # Text / PDF
+    )  # Text / PDF / TXT
 
     input_text = db.Column(
         db.Text,
@@ -130,7 +146,7 @@ class Summary(db.Model):
 
     user_id = db.Column(
         db.Integer,
-        db.ForeignKey("USER.user_id"),
+        db.ForeignKey("AUTH.user_id"),
         nullable=False
     )
 

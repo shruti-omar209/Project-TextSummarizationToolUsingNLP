@@ -1,0 +1,495 @@
+{% extends "base.html" %}
+{% block title %}Generate Summary — AI Summarizer{% endblock %}
+{% block head %}
+<style>
+/* ===== FULL HEIGHT NO-SCROLL LAYOUT ===== */
+body, html { overflow: hidden; height: 100%; }
+.main-content { display: flex; flex-direction: column; height: 100vh; overflow: hidden; padding: 16px 20px 0; }
+.page-header { flex-shrink: 0; margin-bottom: 10px; }
+.page-header h2 { font-size: 20px; margin-bottom: 2px; }
+
+/* Split layout */
+.summarizer-layout {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+.pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+.pane-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.pane .output-box {
+  height: 200px;
+  min-height: 200px;
+  max-height: 200px;
+  flex: 0 0 200px;
+  overflow-y: auto;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.7;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  border-left: 3px solid var(--accent);
+  white-space: pre-wrap;
+}
+/* Input textarea */
+#input_text {
+  height: 200px;
+  min-height: 200px;
+  max-height: 200px;
+  width: 100%;
+  flex: 0 0 200px;
+  resize: none;
+  overflow-y: auto;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.7;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.pane-footer {
+  flex-shrink: 0;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.word-badge {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+/* Remove button — no fill */
+.btn-remove {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+.btn-remove:hover { border-color: var(--danger); color: var(--danger); }
+/* Word count row below textarea */
+.input-word-row {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 2px 6px;
+}
+/* File upload area */
+.file-upload-area {
+  height: 110px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  background: var(--input-bg);
+  border: 1.5px dashed var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.2s, opacity 0.2s;
+  box-sizing: border-box;
+}
+.file-upload-area:hover:not(.disabled-area) { border-color: var(--accent); }
+.file-upload-area.disabled-area { opacity: 0.45; cursor: not-allowed; }
+.file-upload-area i { font-size: 22px; color: var(--accent); }
+.file-upload-area input[type="file"] { display: none; }
+/* File preview */
+.file-preview-box {
+  height: 110px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--input-bg);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text);
+  box-sizing: border-box;
+}
+.file-preview-box i { color: var(--accent); }
+/* Tooltip wrapper for disabled upload */
+.upload-tooltip-wrap {
+  position: relative;
+  margin-top: 10px;
+  flex-shrink: 0;
+}
+.upload-tooltip-wrap .tooltip-msg {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--card-bg);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+.upload-tooltip-wrap .tooltip-msg::after {
+  content: '';
+  position: absolute;
+  top: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--text);
+}
+/* Show tooltip only on hover when the area is disabled */
+.upload-tooltip-wrap.is-disabled:hover .tooltip-msg { display: block; }
+/* Textarea tooltip wrapper */
+.textarea-tooltip-wrap {
+  position: relative;
+  flex: 0 0 200px;
+}
+.textarea-tooltip-wrap .tooltip-msg {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--card-bg);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+.textarea-tooltip-wrap .tooltip-msg::after {
+  content: '';
+  position: absolute;
+  top: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--text);
+}
+.textarea-tooltip-wrap.is-disabled:hover .tooltip-msg { display: block; }
+.bottom-strip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 0 14px;
+}
+/* Bottom strip */
+#error-box { flex-shrink: 0; margin-bottom: 6px; padding: 8px 12px; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#error-box .error-close { background: none; border: none; cursor: pointer; color: inherit; font-size: 15px; line-height: 1; padding: 0 2px; opacity: 0.7; flex-shrink: 0; }
+#error-box .error-close:hover { opacity: 1; }
+.bottom-strip { flex-shrink: 0; }
+/* Error box */
+#loader { padding: 0; font-size: 13px; display: none !important; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2><i class="fas fa-magic"></i> Generate Summary</h2>
+</div>
+
+<form id="summaryForm" enctype="multipart/form-data">
+<input type="hidden" name="input_mode" id="input_mode" value="text">
+
+<div id="error-box" class="alert alert-error" style="display:none">
+  <span id="error-msg"></span>
+  <button class="error-close" onclick="document.getElementById('error-box').style.display='none'" title="Dismiss">&times;</button>
+</div>
+
+<!-- LEFT / RIGHT PANES -->
+<div class="summarizer-layout">
+
+  <!-- LEFT: Input -->
+  <div class="pane">
+    <div class="pane-header">
+      <span class="pane-title">Input</span>
+      <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text)">
+        <span style="font-weight:600;color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:0.4px">Summary Type:</span>
+        <label style="display:flex;align-items:center;gap:4px;"><input type="radio" name="summary_type" value="Concise" checked> Concise</label>
+        <label style="display:flex;align-items:center;gap:4px;"><input type="radio" name="summary_type" value="Detailed"> Detailed</label>
+      </div>
+    </div>
+
+    <!-- Textarea -->
+    <div class="textarea-tooltip-wrap" id="textarea-wrap">
+      <div class="tooltip-msg">Please remove the uploaded file first</div>
+    <textarea id="input_text" name="input_text"
+              placeholder="Paste your article, essay, or any text here…"
+              oninput="updateInputWordCount()"></textarea>
+    </div>
+
+    <!-- Word count below textarea -->
+    <div class="input-word-row"><span id="input-word-count">0 / 800 words</span></div>
+
+    <!-- File upload below word count -->
+    <div class="upload-tooltip-wrap" id="upload-wrap">
+      <div class="tooltip-msg">Please clear the text area first</div>
+      <div id="file-drop-area" class="file-upload-area" onclick="handleUploadClick()">
+      <i class="fas fa-cloud-upload-alt"></i>
+      <span>Click to upload a file</span>
+      <small>Accepted: .pdf, .txt (max 5 MB)</small>
+      <input type="file" id="file" name="file" accept=".pdf,.txt" onchange="onFileSelected()">
+    </div>
+    <div id="file-preview" style="display:none" class="file-preview-box">
+      <i class="fas fa-file-alt"></i>
+      <span id="file-name-display"></span>
+      <button type="button" class="btn-remove" onclick="removeFile()">
+        <i class="fas fa-times"></i> Remove
+      </button>
+    </div>
+    </div><!-- end upload-tooltip-wrap -->
+  </div>
+
+  <!-- RIGHT: Output -->
+  <div class="pane">
+    <div class="pane-header">
+      <span class="pane-title">Generated Summary</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button type="button" class="btn-remove" id="clearBtn" onclick="clearAll()" style="display:none">
+          <i class="fas fa-broom"></i> Clear
+        </button>
+      </div>
+    </div>
+    <div class="output-box" id="summary-output"></div>
+    <div class="input-word-row" id="summary-word-row" style="display:none">
+      <span class="word-badge" id="summary-word-count"></span>
+    </div>
+    <div class="pane-footer" id="result-actions" style="display:none">
+      <button type="button" class="btn btn-outline btn-sm" onclick="copySummary()">
+        <i class="fas fa-copy"></i> Copy
+      </button>
+      <button type="button" class="btn btn-primary btn-sm" id="saveSummaryBtn" onclick="saveSummary()">
+        <i class="fas fa-save"></i> Save
+      </button>
+      <span id="save-msg" style="display:none;font-size:12px;color:var(--success)">
+        <i class="fas fa-check-circle"></i> Saved to history
+      </span>
+    </div>
+  </div>
+
+</div>
+
+<!-- Bottom strip: Summarize button centered across both panes -->
+<div class="bottom-strip">
+  <button type="submit" class="btn btn-primary" id="generateBtn" style="padding:8px 28px;font-size:14px;min-width:150px">
+    <i class="fas fa-bolt"></i> Summarize
+  </button>
+</div>
+</form>
+
+<!-- Hidden save form -->
+<form id="saveForm" method="POST" action="/save_summary" style="display:none">
+  <input type="hidden" name="summary_text" id="save-summary">
+  <input type="hidden" name="input_text" id="save-input">
+  <input type="hidden" name="summary_type" id="save-type">
+  <input type="hidden" name="input_type" id="save-input-type">
+  <input type="hidden" name="file_name" id="save-filename" value="">
+</form>
+
+<script>
+var userLoggedIn = {{ 'true' if current_user.is_authenticated else 'false' }};
+
+function handleUploadClick() {
+  var dropArea = document.getElementById('file-drop-area');
+  if (dropArea.classList.contains('disabled-area')) return;
+  document.getElementById('file').click();
+}
+
+function updateInputWordCount() {
+  var txt = document.getElementById('input_text').value.trim();
+  var count = txt ? txt.split(/\s+/).filter(Boolean).length : 0;
+  document.getElementById('input-word-count').textContent = count + ' / 800 words';
+  // mutual exclusion: disable file area when text is present
+  var dropArea = document.getElementById('file-drop-area');
+  var wrap = document.getElementById('upload-wrap');
+  if (count > 0) {
+    dropArea.classList.add('disabled-area');
+    wrap.classList.add('is-disabled');
+  } else {
+    dropArea.classList.remove('disabled-area');
+    wrap.classList.remove('is-disabled');
+  }
+}
+
+function onFileSelected() {
+  var fileInput = document.getElementById('file');
+  if (fileInput.files && fileInput.files.length > 0) {
+    document.getElementById('file-name-display').textContent = fileInput.files[0].name;
+    document.getElementById('file-preview').style.display = 'flex';
+    document.getElementById('file-drop-area').style.display = 'none';
+    document.getElementById('input_mode').value = 'file';
+    document.getElementById('save-filename').value = fileInput.files[0].name;
+    // disable textarea
+    var ta = document.getElementById('input_text');
+    ta.disabled = true;
+    ta.style.opacity = '0.45';
+    document.getElementById('textarea-wrap').classList.add('is-disabled');
+  }
+}
+
+function removeFile() {
+  document.getElementById('file').value = '';
+  document.getElementById('file-preview').style.display = 'none';
+  document.getElementById('file-drop-area').style.display = 'flex';
+  document.getElementById('input_mode').value = 'text';
+  document.getElementById('input-word-count').textContent = '0 / 800 words';
+  document.getElementById('save-filename').value = '';
+  // re-enable textarea
+  var ta = document.getElementById('input_text');
+  ta.disabled = false;
+  ta.title = '';
+  ta.style.opacity = '';
+  document.getElementById('textarea-wrap').classList.remove('is-disabled');
+}
+
+function clearAll() {
+  document.getElementById('input_text').value = '';
+  document.getElementById('input-word-count').textContent = '0 / 800 words';
+  document.getElementById('summary-output').textContent = '';
+  document.getElementById('summary-word-count').textContent = '';
+  document.getElementById('summary-word-row').style.display = 'none';
+  document.getElementById('result-actions').style.display = 'none';
+  document.getElementById('clearBtn').style.display = 'none';
+  document.getElementById('error-box').style.display = 'none';
+  removeFile();
+  // re-enable file drop area
+  var dropArea = document.getElementById('file-drop-area');
+  var wrap = document.getElementById('upload-wrap');
+  dropArea.classList.remove('disabled-area');
+  wrap.classList.remove('is-disabled');
+}
+
+function copySummary() {
+  var text = document.getElementById('summary-output').textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = document.querySelector('[onclick="copySummary()"]');
+    btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+    setTimeout(function() { btn.innerHTML = '<i class="fas fa-copy"></i> Copy'; }, 2000);
+  });
+}
+
+function saveSummary() {
+  var btn = document.getElementById('saveSummaryBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  var formData = new FormData(document.getElementById('saveForm'));
+  fetch('/save_summary', { method: 'POST', body: formData })
+  .then(function(res) {
+    if (res.ok || res.redirected) {
+      btn.style.display = 'none';
+      document.getElementById('save-msg').style.display = 'inline';
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-save"></i> Save';
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save"></i> Save';
+  });
+}
+
+document.getElementById('summaryForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  if (!userLoggedIn) {
+    document.getElementById('error-msg').innerHTML = '<i class="fas fa-lock" style="margin-right:6px"></i>Login required to generate summaries. <a href="/login" style="color:var(--accent);text-decoration:underline;margin-left:4px">Login here</a>';
+    document.getElementById('error-box').style.display = 'flex';
+    return;
+  }
+  var formData = new FormData();
+  var mode = document.getElementById('input_mode').value;
+  formData.append('input_mode', mode);
+  formData.append('summary_type', document.querySelector('[name="summary_type"]:checked').value);
+  if (mode === 'text') {
+    formData.append('input_text', document.getElementById('input_text').value);
+  } else {
+    var fi = document.getElementById('file');
+    if (fi.files.length > 0) formData.append('file', fi.files[0]);
+  }
+
+  document.getElementById('error-box').style.display = 'none';
+  document.getElementById('result-actions').style.display = 'none';
+  document.getElementById('save-msg').style.display = 'none';
+  document.getElementById('saveSummaryBtn').style.display = '';
+  document.getElementById('saveSummaryBtn').disabled = false;
+  document.getElementById('saveSummaryBtn').innerHTML = '<i class="fas fa-save"></i> Save';
+  var btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
+  document.getElementById('summary-output').textContent = '';
+
+  fetch('/generate', { method: 'POST', body: formData })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    document.getElementById('generateBtn').disabled = false;
+    document.getElementById('generateBtn').innerHTML = '<i class="fas fa-bolt"></i> Summarize';
+    if (data.error) {
+      document.getElementById('error-msg').textContent = data.error;
+      document.getElementById('error-box').style.display = 'flex';
+      return;
+    }
+    var origWords = data.original_text ? data.original_text.trim().split(/\s+/).filter(Boolean).length : 0;
+    document.getElementById('input-word-count').textContent = origWords + ' / 800 words';
+    document.getElementById('summary-word-count').textContent = (data.word_count || 0) + ' words in summary';
+    document.getElementById('summary-word-row').style.display = 'flex';
+    document.getElementById('summary-output').textContent = data.summary;
+    document.getElementById('save-summary').value = data.summary;
+    document.getElementById('save-input').value = data.original_text || '';
+    document.getElementById('save-type').value = formData.get('summary_type') || 'Concise';
+    document.getElementById('save-input-type').value = data.input_type || 'Text';
+    document.getElementById('result-actions').style.display = 'flex';
+    document.getElementById('clearBtn').style.display = 'inline-flex';
+  })
+  .catch(function() {
+    document.getElementById('generateBtn').disabled = false;
+    document.getElementById('generateBtn').innerHTML = '<i class="fas fa-bolt"></i> Summarize';
+    document.getElementById('error-msg').textContent = 'An error occurred. Please try again.';
+    document.getElementById('error-box').style.display = 'flex';
+  });
+});
+</script>
+{% endblock %}
