@@ -4,6 +4,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 import requests
 import PyPDF2
+import io
+import traceback
 from datetime import timedelta
 from dotenv import load_dotenv
 import os
@@ -18,6 +20,11 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "fallback_secret")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///database.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# Zero-pad ID display filter
+@app.template_filter("zfill")
+def zfill_filter(value, width=4):
+    return str(value).zfill(width)
 # Neon PostgreSQL drops idle connections — these settings auto-reconnect
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_pre_ping": True,       # test connection before use, reconnects if dropped
@@ -31,6 +38,11 @@ db.init_app(app)
 
 login_manager.login_view = "login"
 login_manager.init_app(app)
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    traceback.print_exc()
+    return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 ALLOWED_EXTENSIONS = {"pdf", "txt"}
 
@@ -51,17 +63,36 @@ HF_HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 
 def call_summarizer(text, max_length, min_length):
+    # Sanitize: keep only printable ASCII + common whitespace
+    import re
+    text = re.sub(r'[^\x20-\x7E\n\t]', ' ', text)
+    text = ' '.join(text.split())
     payload = {
         "inputs": text,
+        "truncation": True,
         "parameters": {
             "max_length": max_length,
-            "min_length": min_length,
-            "truncation": True
+            "min_length": min_length
         }
     }
-    response = requests.post(HF_API_URL, headers=HF_HEADERS, json=payload, timeout=30)
-    response.raise_for_status()
-    return response.json()[0]["summary_text"]
+    response = requests.post(HF_API_URL, headers=HF_HEADERS, json=payload, timeout=120)
+    print(f"[DEBUG] HF API status: {response.status_code}, body: {response.text[:300]}")
+    if not response.ok:
+        try:
+            msg = response.json().get("error", response.text[:200])
+        except Exception:
+            msg = response.text[:200]
+        raise Exception(msg)
+    try:
+        result = response.json()
+        if isinstance(result, list) and len(result) > 0 and "summary_text" in result[0]:
+            return result[0]["summary_text"]
+        elif isinstance(result, dict) and "summary_text" in result:
+            return result["summary_text"]
+        else:
+            raise Exception(f"Unexpected API response format: {str(result)[:200]}")
+    except Exception as e:
+        raise Exception(f"Failed to parse API response: {str(e)}") from e
 
 
 def admin_required(f):
@@ -75,15 +106,19 @@ def admin_required(f):
 
 
 def log_activity(user_id, role, activity_type, details=None, related_id=None):
-    activity = Activity(
-        user_id=user_id,
-        role=role,
-        activity_type=activity_type,
-        details=details,
-        related_id=related_id
-    )
-    db.session.add(activity)
-    db.session.commit()
+    try:
+        activity = Activity(
+            user_id=user_id,
+            role=role,
+            activity_type=activity_type,
+            details=details,
+            related_id=related_id
+        )
+        db.session.add(activity)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"[WARNING] log_activity failed: {e}")
 
 
 # ================================================================
@@ -94,6 +129,14 @@ def log_activity(user_id, role, activity_type, details=None, related_id=None):
 def index():
     if current_user.is_authenticated and current_user.role == "admin":
         return redirect(url_for("admin_dashboard"))
+    if not current_user.is_authenticated:
+        return render_template("home.html")
+    return render_template("index.html")
+
+
+@app.route("/summarize")
+@login_required
+def summarize_page():
     return render_template("index.html")
 
 
@@ -227,11 +270,21 @@ def generate():
         input_type = ext.upper()
 
         if ext == "pdf":
-            reader = PyPDF2.PdfReader(uploaded_file)
-            for page in reader.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text += extracted
+            try:
+                pdf_bytes = io.BytesIO(uploaded_file.read())
+                reader = PyPDF2.PdfReader(pdf_bytes)
+                for page in reader.pages:
+                    try:
+                        extracted = page.extract_text()
+                        if extracted:
+                            text += extracted
+                    except Exception:
+                        continue  # skip unreadable pages
+                if not text.strip():
+                    return jsonify({"error": "Could not extract text from this PDF. It may be scanned or image-based."}), 400
+            except Exception as e:
+                traceback.print_exc()
+                return jsonify({"error": f"Failed to read PDF: {str(e)}"}), 400
         elif ext == "txt":
             text = uploaded_file.read().decode("utf-8", errors="ignore")
 
@@ -239,20 +292,28 @@ def generate():
                      "File Uploaded", details=f"Uploaded file: {filename}")
 
     if not text.strip():
-        return jsonify({"error": "No text provided."}), 400
+        return jsonify({"error": "No text could be extracted. The file may be empty or image-based (scanned PDF)."}), 400
 
     text = text.replace("\n", " ").replace("\r", " ")
     text = " ".join(text.split())
     words = text.split()
-    text = " ".join(words[:500])
+    text = " ".join(words[:800])  # BART max 1024 tokens; truncation=True handles overflow
     original_words = len(text.split())
 
-    percentage = 0.25 if summary_type == "concise" else 0.55
-    target_words = int(original_words * percentage)
-    max_len = max(40, int(target_words * 1.3))
-    min_len = max(20, int(max_len * 0.6))
+    if original_words < 30:
+        return jsonify({"error": "Text is too short to summarize. Please provide at least 30 words."}), 400
 
-    summary = call_summarizer(text, max_len, min_len)
+    percentage = 0.20 if summary_type.lower() == "concise" else 0.45
+    target_words = int(original_words * percentage)
+    max_len = min(512, max(60, int(target_words * 1.3)))
+    min_len = min(200, max(20, int(target_words * 0.7)))
+    if min_len >= max_len:
+        min_len = max(20, max_len - 20)
+
+    try:
+        summary = call_summarizer(text, max_len, min_len)
+    except Exception as e:
+        return jsonify({"error": f"Summarization failed: {str(e)}"}), 500
 
     return jsonify({
         "summary": summary,
@@ -303,7 +364,7 @@ def save_summary():
 
     log_activity(current_user.user_id, current_user.role,
                  "Summary Generated",
-                 details=f"Summary type: {summary_type}",
+                 details=f"{summary_type} summary saved" + (f" from file '{file_name}'" if file_name else " from text input"),
                  related_id=summary_record.summary_id)
 
     return jsonify({"status": "saved"})
@@ -331,6 +392,8 @@ def history():
 def delete_summary(summary_id):
     summary = Summary.query.get_or_404(summary_id)
     if summary.user_id != current_user.user_id:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"error": "Unauthorized"}), 403
         return "Unauthorized", 403
 
     input_record = InputContent.query.get(summary.input_id)
@@ -338,6 +401,8 @@ def delete_summary(summary_id):
         db.session.delete(input_record)
     db.session.delete(summary)
     db.session.commit()
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"ok": True})
     return redirect(url_for("history"))
 
 
@@ -351,6 +416,8 @@ def delete_all():
             db.session.delete(input_record)
         db.session.delete(s)
     db.session.commit()
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"ok": True})
     return redirect(url_for("history"))
 
 

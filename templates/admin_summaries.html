@@ -25,7 +25,7 @@
             <tbody>
                 {% for summary, username in summaries %}
                 <tr>
-                    <td style="color:var(--text-muted);">#{{ summary.summary_id }}</td>
+                    <td style="color:var(--text-muted);">{{ summary.summary_id | zfill(4) }}</td>
                     <td>{{ username }}</td>
                     <td><span class="badge badge-user">{{ summary.summary_type }}</span></td>
                     <td style="font-size:13px;color:var(--text-muted);max-width:300px;">

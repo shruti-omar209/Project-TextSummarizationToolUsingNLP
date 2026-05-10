@@ -2,25 +2,60 @@
 {% block title %}History — AI Summarizer{% endblock %}
 {% block page_title %}Summary History{% endblock %}
 
+{% block head %}
+<style>
+/* ===== CONFIRM MODAL ===== */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 48px rgba(0,0,0,0.25);
+  padding: 28px 28px 22px;
+  width: 100%;
+  max-width: 400px;
+  animation: modalIn 0.18s ease;
+}
+@keyframes modalIn { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: rgba(210,15,57,0.12);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; color: var(--danger);
+  margin: 0 auto 16px;
+}
+.modal-title { font-size: 16px; font-weight: 700; text-align: center; margin-bottom: 8px; }
+.modal-desc  { font-size: 13px; color: var(--text-muted); text-align: center; margin-bottom: 22px; line-height: 1.55; }
+.modal-actions { display: flex; gap: 10px; }
+.modal-actions .btn { flex: 1; justify-content: center; padding: 9px 0; font-size: 14px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="card">
     <div class="header-row">
-        <span style="font-size:14px;color:var(--text-muted);">
+        <span style="font-size:14px;color:var(--text-muted);" id="summary-count">
             {{ results|length }} saved summary{% if results|length != 1 %}s{% endif %}
         </span>
         {% if results %}
-        <form action="{{ url_for('delete_all') }}" method="POST"
-              onsubmit="return confirm('Delete all summaries permanently?')">
-            <button type="submit" class="btn btn-danger btn-sm">
-                <i class="fa fa-trash"></i> Delete All
-            </button>
-        </form>
+        <button type="button" class="btn btn-danger btn-sm" onclick="openModal('all', null)">
+            <i class="fa fa-trash"></i> Delete All
+        </button>
         {% endif %}
     </div>
 
     {% if results %}
         {% for summary, time in results %}
-        <div class="history-card">
+        <div class="history-card" id="card-{{ summary.summary_id }}">
             <div class="card-content">
                 <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
                     <span class="badge badge-user">{{ summary.summary_type | capitalize }}</span>
@@ -36,23 +71,125 @@
             </div>
 
             <div class="card-actions">
-                <form action="{{ url_for('delete_summary', summary_id=summary.summary_id) }}"
-                      method="POST" onsubmit="return confirm('Delete this summary?')">
-                    <button type="submit" class="btn btn-danger btn-sm">
-                        <i class="fa fa-trash"></i>
-                    </button>
-                </form>
+                <button type="button" class="btn btn-danger btn-sm"
+                        onclick="openModal('one', {{ summary.summary_id }})">
+                    <i class="fa fa-trash"></i>
+                </button>
             </div>
         </div>
         {% endfor %}
     {% else %}
-        <p style="color:var(--text-muted);text-align:center;padding:40px 0;">
+        <p id="empty-msg" style="color:var(--text-muted);text-align:center;padding:40px 0;">
             <i class="fa fa-inbox" style="font-size:32px;display:block;margin-bottom:10px;"></i>
             No summaries saved yet.
-            <a href="{{ url_for('index') }}" style="color:var(--accent);">Generate one now</a>.
+            <a href="{{ url_for('summarize_page') }}" style="color:var(--accent);">Generate one now</a>.
         </p>
     {% endif %}
 </div>
+
+<!-- ===== CONFIRM MODAL ===== -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal-box">
+    <div class="modal-icon"><i class="fas fa-trash"></i></div>
+    <div class="modal-title" id="modalTitle">Delete summary?</div>
+    <div class="modal-desc"  id="modalDesc">This action cannot be undone.</div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" id="modalConfirmBtn" onclick="confirmDelete()">
+        <i class="fas fa-trash"></i> Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+var _deleteMode = null;   // 'one' | 'all'
+var _deleteId   = null;
+
+function openModal(mode, id) {
+  _deleteMode = mode;
+  _deleteId   = id;
+  if (mode === 'all') {
+    document.getElementById('modalTitle').textContent = 'Delete all summaries?';
+    document.getElementById('modalDesc').textContent  = 'All your saved summaries will be permanently removed. This cannot be undone.';
+  } else {
+    document.getElementById('modalTitle').textContent = 'Delete this summary?';
+    document.getElementById('modalDesc').textContent  = 'This summary will be permanently removed. This cannot be undone.';
+  }
+  document.getElementById('confirmModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('confirmModal').classList.remove('open');
+  _deleteMode = null;
+  _deleteId   = null;
+}
+
+// Close on backdrop click
+document.getElementById('confirmModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+function confirmDelete() {
+  var btn = document.getElementById('modalConfirmBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting…';
+
+  var url = _deleteMode === 'all'
+    ? '/delete_all'
+    : '/delete_summary/' + _deleteId;
+
+  fetch(url, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (!data.ok) throw new Error('Failed');
+    closeModal();
+    if (_deleteMode === 'all' || _deleteMode === null) {
+      // remove all cards
+      document.querySelectorAll('.history-card').forEach(function(c) { c.remove(); });
+      showEmpty();
+    } else {
+      var card = document.getElementById('card-' + _deleteId);
+      if (card) card.remove();
+      updateCount();
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-trash"></i> Delete';
+  });
+}
+
+function updateCount() {
+  var cards = document.querySelectorAll('.history-card');
+  var n = cards.length;
+  var el = document.getElementById('summary-count');
+  if (el) el.textContent = n + ' saved summar' + (n === 1 ? 'y' : 'ies');
+  if (n === 0) showEmpty();
+}
+
+function showEmpty() {
+  updateCount();
+  // hide delete-all button if present
+  var delAllBtn = document.querySelector('.header-row .btn-danger');
+  if (delAllBtn) delAllBtn.style.display = 'none';
+  // show empty message
+  var em = document.getElementById('empty-msg');
+  if (!em) {
+    var card = document.querySelector('.card');
+    var p = document.createElement('p');
+    p.id = 'empty-msg';
+    p.style.cssText = 'color:var(--text-muted);text-align:center;padding:40px 0;';
+    p.innerHTML = '<i class="fa fa-inbox" style="font-size:32px;display:block;margin-bottom:10px;"></i>No summaries saved yet. <a href="/summarize" style="color:var(--accent);">Generate one now</a>.';
+    card.appendChild(p);
+  } else {
+    em.style.display = '';
+  }
+}
+</script>
 {% endblock %}
 
 

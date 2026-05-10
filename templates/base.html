@@ -4,14 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AI Text Summarizer{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     {% block head %}{% endblock %}
 </head>
 <body>
-<div class="app-layout">
+<div class="app-layout{% block extra_layout_class %}{% endblock %}">
 
     <!-- ======= SIDEBAR ======= -->
+    {% if not hide_sidebar %}
     <aside class="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-logo"><i class="fa fa-brain"></i> AI Summarizer</div>
@@ -68,8 +70,8 @@
             {% elif current_user.is_authenticated and current_user.role == "user" %}
             <!-- USER NAV -->
             <div class="nav-section">Tools</div>
-            <a href="{{ url_for('index') }}"
-               class="nav-item {% if request.endpoint == 'index' %}active{% endif %}">
+            <a href="{{ url_for('summarize_page') }}"
+               class="nav-item {% if request.endpoint in ['index','summarize_page'] %}active{% endif %}">
                 <i class="fa fa-wand-magic-sparkles"></i> <span>Generate Summary</span>
             </a>
             <a href="{{ url_for('history') }}"
@@ -107,6 +109,7 @@
         </div>
         {% endif %}
     </aside>
+    {% endif %}
 
     <!-- ======= MAIN CONTENT ======= -->
     <main class="main-content">

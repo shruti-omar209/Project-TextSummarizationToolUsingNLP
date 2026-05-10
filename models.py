@@ -70,7 +70,7 @@ class Activity(db.Model):
     )
 
     activity_type = db.Column(
-        db.String(100),
+        db.String(50),
         nullable=False
     )
 

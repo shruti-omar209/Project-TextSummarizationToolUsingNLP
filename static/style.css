@@ -164,6 +164,10 @@ body {
     padding: 28px 32px;
     min-height: 100vh;
 }
+/* No sidebar layout */
+.app-layout.no-sidebar .main-content {
+    margin-left: 0;
+}
 
 /* ===========================
    TOPBAR
