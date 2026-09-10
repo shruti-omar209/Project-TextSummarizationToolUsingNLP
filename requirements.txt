@@ -7,3 +7,5 @@ requests
 PyPDF2
 python-dotenv
 psycopg2-binary
+nltk
+scikit-learn

@@ -2,18 +2,17 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, s
 from flask_login import login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-import requests
 import PyPDF2
 import io
 import traceback
 from datetime import timedelta
 from dotenv import load_dotenv
 import os
-
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from database import db, login_manager
 from models import User, InputContent, Summary, Activity
+from summarizer import extract_key_sentences
 
 app = Flask(__name__)
 
@@ -56,43 +55,7 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 
-# Hugging Face Inference API
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/facebook/bart-large-cnn"
-HF_TOKEN = os.getenv("HF_TOKEN")
-HF_HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
 
-
-def call_summarizer(text, max_length, min_length):
-    # Sanitize: keep only printable ASCII + common whitespace
-    import re
-    text = re.sub(r'[^\x20-\x7E\n\t]', ' ', text)
-    text = ' '.join(text.split())
-    payload = {
-        "inputs": text,
-        "truncation": True,
-        "parameters": {
-            "max_length": max_length,
-            "min_length": min_length
-        }
-    }
-    response = requests.post(HF_API_URL, headers=HF_HEADERS, json=payload, timeout=120)
-    print(f"[DEBUG] HF API status: {response.status_code}, body: {response.text[:300]}")
-    if not response.ok:
-        try:
-            msg = response.json().get("error", response.text[:200])
-        except Exception:
-            msg = response.text[:200]
-        raise Exception(msg)
-    try:
-        result = response.json()
-        if isinstance(result, list) and len(result) > 0 and "summary_text" in result[0]:
-            return result[0]["summary_text"]
-        elif isinstance(result, dict) and "summary_text" in result:
-            return result["summary_text"]
-        else:
-            raise Exception(f"Unexpected API response format: {str(result)[:200]}")
-    except Exception as e:
-        raise Exception(f"Failed to parse API response: {str(e)}") from e
 
 
 def admin_required(f):
@@ -297,23 +260,36 @@ def generate():
     text = text.replace("\n", " ").replace("\r", " ")
     text = " ".join(text.split())
     words = text.split()
-    text = " ".join(words[:800])  # BART max 1024 tokens; truncation=True handles overflow
+    text = " ".join(words[:1000])  # cap input length to keep summarization fast
     original_words = len(text.split())
 
     if original_words < 30:
         return jsonify({"error": "Text is too short to summarize. Please provide at least 30 words."}), 400
 
-    percentage = 0.20 if summary_type.lower() == "concise" else 0.45
-    target_words = int(original_words * percentage)
-    max_len = min(512, max(60, int(target_words * 1.3)))
-    min_len = min(200, max(20, int(target_words * 0.7)))
-    if min_len >= max_len:
-        min_len = max(20, max_len - 20)
+    # NLP pipeline (summarizer.py): TF-IDF + cosine similarity selects the most
+    # representative sentences, then _compress() strips subordinate clauses so each
+    # sentence contributes its core idea at a readable length.
+    # Concise uses a word budget: it adds the most important sentences until the
+    # summary reaches at least 10% of the input length. Detailed uses segment
+    # selection so coverage scales with input length.
+    if summary_type.lower() == "concise":
+        n_select = None
+        max_words = 22
+        min_words = original_words // 10  # concise = at least ~10% of input
+    else:
+        n_select = max(5, min(9, original_words // 55))
+        max_words = 45
+        min_words = None
 
     try:
-        summary = call_summarizer(text, max_len, min_len)
+        summary = extract_key_sentences(text, n_select, max_words=max_words,
+                                        min_words=min_words)
     except Exception as e:
         return jsonify({"error": f"Summarization failed: {str(e)}"}), 500
+
+    log_activity(current_user.user_id, current_user.role,
+                 "Summary Generated",
+                 details=f"{summary_type} summary generated from {input_type}")
 
     return jsonify({
         "summary": summary,
@@ -363,7 +339,7 @@ def save_summary():
     db.session.commit()
 
     log_activity(current_user.user_id, current_user.role,
-                 "Summary Generated",
+                 "Summary Saved",
                  details=f"{summary_type} summary saved" + (f" from file '{file_name}'" if file_name else " from text input"),
                  related_id=summary_record.summary_id)
 
@@ -379,7 +355,7 @@ def history():
         Activity, Activity.related_id == Summary.summary_id
     ).filter(
         Summary.user_id == current_user.user_id,
-        Activity.activity_type == "Summary Generated"
+        Activity.activity_type == "Summary Saved"
     ).order_by(Activity.activity_time.desc()).all()
 
     log_activity(current_user.user_id, current_user.role, "Viewed History")
@@ -396,6 +372,10 @@ def delete_summary(summary_id):
             return jsonify({"error": "Unauthorized"}), 403
         return "Unauthorized", 403
 
+    log_activity(current_user.user_id, current_user.role,
+                 "Summary Deleted",
+                 details=f"Deleted summary ID {summary_id}",
+                 related_id=summary_id)
     input_record = InputContent.query.get(summary.input_id)
     if input_record:
         db.session.delete(input_record)
@@ -411,6 +391,10 @@ def delete_summary(summary_id):
 def delete_all():
     summaries = Summary.query.filter_by(user_id=current_user.user_id).all()
     for s in summaries:
+        log_activity(current_user.user_id, current_user.role,
+                     "Summary Deleted",
+                     details=f"Deleted summary ID {s.summary_id}",
+                     related_id=s.summary_id)
         input_record = InputContent.query.get(s.input_id)
         if input_record:
             db.session.delete(input_record)
@@ -430,11 +414,13 @@ def delete_all():
 @admin_required
 def admin_dashboard():
     total_users = User.query.filter_by(role="user").count()
-    total_summaries = Summary.query.count()
+    total_generated = Activity.query.filter_by(activity_type="Summary Generated").count()
+    total_saved = Summary.query.count()
     recent_logs = Activity.query.order_by(Activity.activity_time.desc()).limit(10).all()
     return render_template("admin_dashboard.html",
                            total_users=total_users,
-                           total_summaries=total_summaries,
+                           total_generated=total_generated,
+                           total_saved=total_saved,
                            recent_logs=recent_logs)
 
 
